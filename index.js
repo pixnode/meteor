@@ -15,7 +15,6 @@ import {
   sendMessage,
   sendMessageWithButtons,
   sendHTML,
-  editMessage,
   editMessageWithButtons,
   answerCallbackQuery,
   notifyOutOfRange,
