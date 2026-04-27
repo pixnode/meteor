@@ -33,7 +33,11 @@ import { bootstrapHiveMind, ensureAgentId, getHiveMindPullMode, isHiveMindEnable
 import { appendDecision } from "./decision-log.js";
 
 import { initMeteorGarden } from "./meteor-garden-integration.js";
+import { startDashboard, pushDashboardLog } from "./dashboard.js";
+
 log("startup", "DLMM LP Agent starting...");
+startDashboard();
+
 log("startup", `Mode: ${process.env.DRY_RUN === "true" ? "DRY RUN" : "LIVE"}`);
 log("startup", `Model: ${process.env.LLM_MODEL || "hermes-3-405b"}`);
 ensureAgentId();

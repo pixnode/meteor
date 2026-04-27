@@ -1,5 +1,7 @@
 import fs from "fs";
 import path from "path";
+import { pushDashboardLog } from "./dashboard.js";
+
 
 const LOG_DIR = "./logs";
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
@@ -32,7 +34,9 @@ export function log(category, message) {
   const dateStr = timestamp.split("T")[0];
   const logFile = path.join(LOG_DIR, `agent-${dateStr}.log`);
   fs.appendFileSync(logFile, line + "\n");
+  pushDashboardLog(`[${category.toUpperCase()}] ${message}`);
 }
+
 
 /**
  * Log a tool action with full details (for audit trail).
