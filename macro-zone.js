@@ -13,66 +13,66 @@
 
 import { log } from "./logger.js";
 
-const JUPITER_PRICE_API = "https://price.jup.ag/v6/price";
-const BTC_MINT  = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"; // Wormhole BTC on Solana
-const SOL_MINT  = "So11111111111111111111111111111111111111112";
+const JUPITER_PRICE_API = "https://api.jup.ag/price/v2";
+const BTC_MINT = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh";
+const SOL_MINT = "So11111111111111111111111111111111111111112";
 
 // ─── Zone thresholds (eisbedog Fear Zone framework) ─────────────
 const ZONES = [
   {
-    label:       "DEEP_WINTER",
-    btcMin:      0,
-    btcMax:      55_000,
-    solMin:      0,
-    solMax:      80,
-    strategy:    "single_sided_spot",
+    label: "DEEP_WINTER",
+    btcMin: 0,
+    btcMax: 55_000,
+    solMin: 0,
+    solMax: 80,
+    strategy: "single_sided_spot",
     rangeExtPct: 80,          // extend range -80% dari harga
-    objective:   "SOL accumulation — compound semua fee ke SOL, jangan convert ke USD",
-    color:       "🔵",
+    objective: "SOL accumulation — compound semua fee ke SOL, jangan convert ke USD",
+    color: "🔵",
   },
   {
-    label:       "FEAR",
-    btcMin:      55_000,
-    btcMax:      70_000,
-    solMin:      80,
-    solMax:      120,
-    strategy:    "bid_ask",
+    label: "FEAR",
+    btcMin: 55_000,
+    btcMax: 70_000,
+    solMin: 80,
+    solMax: 120,
+    strategy: "bid_ask",
     rangeExtPct: 74,
-    objective:   "Survive + akumulasi — range lebar, minimize rebalancing",
-    color:       "🟣",
+    objective: "Survive + akumulasi — range lebar, minimize rebalancing",
+    color: "🟣",
   },
   {
-    label:       "CAUTION",
-    btcMin:      70_000,
-    btcMax:      90_000,
-    solMin:      120,
-    solMax:      200,
-    strategy:    "spot",
+    label: "CAUTION",
+    btcMin: 70_000,
+    btcMax: 90_000,
+    solMin: 120,
+    solMax: 200,
+    strategy: "spot",
     rangeExtPct: 50,
-    objective:   "Balance fee vs IL — Spot standard 40-60 bins",
-    color:       "🟡",
+    objective: "Balance fee vs IL — Spot standard 40-60 bins",
+    color: "🟡",
   },
   {
-    label:       "NEUTRAL",
-    btcMin:      90_000,
-    btcMax:      110_000,
-    solMin:      200,
-    solMax:      350,
-    strategy:    "spot",
+    label: "NEUTRAL",
+    btcMin: 90_000,
+    btcMax: 110_000,
+    solMin: 200,
+    solMax: 350,
+    strategy: "spot",
     rangeExtPct: 30,
-    objective:   "Standard operation — optimasi fee capture",
-    color:       "🟢",
+    objective: "Standard operation — optimasi fee capture",
+    color: "🟢",
   },
   {
-    label:       "BULL",
-    btcMin:      110_000,
-    btcMax:      Infinity,
-    solMin:      350,
-    solMax:      Infinity,
-    strategy:    "curve",
+    label: "BULL",
+    btcMin: 110_000,
+    btcMax: Infinity,
+    solMin: 350,
+    solMax: Infinity,
+    strategy: "curve",
     rangeExtPct: 15,
-    objective:   "Maksimalkan USD fee — Curve terpusat 15-20 bins",
-    color:       "🚀",
+    objective: "Maksimalkan USD fee — Curve terpusat 15-20 bins",
+    color: "🚀",
   },
 ];
 
@@ -86,15 +86,31 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * Return { btc, sol } dalam USD.
  */
 async function fetchPrices() {
-  const url = `${JUPITER_PRICE_API}?ids=${BTC_MINT},${SOL_MINT}`;
-  const res  = await fetch(url, { signal: AbortSignal.timeout(8_000) });
-  if (!res.ok) throw new Error(`Jupiter Price API ${res.status}`);
-  const data = await res.json();
+  // Primary: Jupiter Price v2 (API baru)
+  try {
+    const url = `${JUPITER_PRICE_API}?ids=${SOL_MINT},${BTC_MINT}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) throw new Error(`Jupiter v2 ${res.status}`);
+    const data = await res.json();
+    const sol = Number(data?.data?.[SOL_MINT]?.price ?? 0);
+    const btc = Number(data?.data?.[BTC_MINT]?.price ?? 0);
+    if (sol > 0) return { btc: btc || sol * 2800, sol };
+    throw new Error("Jupiter v2: harga kosong");
+  } catch (err) {
+    log("macro_zone", `Jupiter v2 gagal (${err.message}), fallback ke Binance`);
+  }
 
-  const btc = Number(data?.data?.[BTC_MINT]?.price ?? 0);
-  const sol = Number(data?.data?.[SOL_MINT]?.price ?? 0);
-
-  if (!btc || !sol) throw new Error("Harga BTC/SOL tidak tersedia dari Jupiter");
+  // Fallback: Binance public API (tidak butuh auth)
+  const [btcRes, solRes] = await Promise.all([
+    fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", { signal: AbortSignal.timeout(8_000) }),
+    fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT", { signal: AbortSignal.timeout(8_000) }),
+  ]);
+  if (!btcRes.ok || !solRes.ok) throw new Error("Binance API gagal");
+  const btcData = await btcRes.json();
+  const solData = await solRes.json();
+  const btc = Number(btcData.price ?? 0);
+  const sol = Number(solData.price ?? 0);
+  if (!btc || !sol) throw new Error("Binance: harga kosong");
   return { btc, sol };
 }
 
@@ -137,19 +153,19 @@ export async function getMacroZone(forceRefresh = false) {
     const zone = classifyZone(btc, sol);
 
     const result = {
-      btc_price:    btc,
-      sol_price:    sol,
-      zone:         zone.label,
-      color:        zone.color,
-      strategy:     zone.strategy,
+      btc_price: btc,
+      sol_price: sol,
+      zone: zone.label,
+      color: zone.color,
+      strategy: zone.strategy,
       range_ext_pct: zone.rangeExtPct,
-      objective:    zone.objective,
-      deep_winter:  zone.label === "DEEP_WINTER",
-      timestamp:    new Date().toISOString(),
+      objective: zone.objective,
+      deep_winter: zone.label === "DEEP_WINTER",
+      timestamp: new Date().toISOString(),
       summary: `${zone.color} ${zone.label} | BTC $${btc.toLocaleString()} | SOL $${sol.toFixed(2)} | Strategi: ${zone.strategy} | Range ext: -${zone.rangeExtPct}%`,
     };
 
-    _cache   = result;
+    _cache = result;
     _cacheTs = now;
 
     log("macro_zone", result.summary);
@@ -165,17 +181,17 @@ export async function getMacroZone(forceRefresh = false) {
 
     // Fallback paling aman: CAUTION zone
     return {
-      btc_price:    null,
-      sol_price:    null,
-      zone:         "CAUTION",
-      color:        "🟡",
-      strategy:     "spot",
+      btc_price: null,
+      sol_price: null,
+      zone: "CAUTION",
+      color: "🟡",
+      strategy: "spot",
       range_ext_pct: 50,
-      objective:    "Fallback CAUTION — harga tidak bisa difetch",
-      deep_winter:  false,
-      timestamp:    new Date().toISOString(),
-      error:        err.message,
-      summary:      "🟡 CAUTION (fallback) | Tidak bisa fetch harga BTC/SOL",
+      objective: "Fallback CAUTION — harga tidak bisa difetch",
+      deep_winter: false,
+      timestamp: new Date().toISOString(),
+      error: err.message,
+      summary: "🟡 CAUTION (fallback) | Tidak bisa fetch harga BTC/SOL",
     };
   }
 }
