@@ -9,9 +9,10 @@
  * @param {Object} perfSummary - Performance summary
  * @returns {string} - Complete system prompt
  */
+import { getMacroZonePromptContext } from "./meteor-garden-integration.js";
 import { config } from "./config.js";
 
-export function buildSystemPrompt(agentType, portfolio, positions, stateSummary = null, lessons = null, perfSummary = null, weightsSummary = null, decisionSummary = null) {
+export async function buildSystemPrompt(agentType, portfolio, positions, stateSummary = null, lessons = null, perfSummary = null, weightsSummary = null, decisionSummary = null) {
   const s = config.screening;
 
   // MANAGER gets a leaner prompt — positions are pre-loaded in the goal, not repeated here
@@ -34,8 +35,10 @@ ${lessons ? `LESSONS LEARNED:\n${lessons}\n` : ""}Timestamp: ${new Date().toISOS
 `;
   }
 
+  const macroContext = await getMacroZonePromptContext().catch(() => "");
   let basePrompt = `You are an autonomous DLMM LP (Liquidity Provider) agent operating on Meteora, Solana.
 Role: ${agentType || "GENERAL"}
+${macroContext}
 
 ═══════════════════════════════════════════
  CURRENT STATE
@@ -47,10 +50,10 @@ Memory: ${JSON.stringify(stateSummary, null, 2)}
 Performance: ${perfSummary ? JSON.stringify(perfSummary, null, 2) : "No closed positions yet"}
 
 Config: ${JSON.stringify({
-  screening: config.screening,
-  management: config.management,
-  schedule: config.schedule,
-}, null, 2)}
+    screening: config.screening,
+    management: config.management,
+    schedule: config.schedule,
+  }, null, 2)}
 
 ${lessons ? `═══════════════════════════════════════════
  LESSONS LEARNED
