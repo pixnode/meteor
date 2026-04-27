@@ -59,8 +59,9 @@ function apiData() {
 
     // Positions dari state
     const positions = Object.entries(state)
-        .filter(([k]) => k !== "_meta")
+        .filter(([k]) => !k.startsWith("_") && state[k]?.pool)
         .map(([addr, p]) => ({ address: addr, ...p }));
+
 
     // Performance stats
     const perf = lessons.performance || [];
